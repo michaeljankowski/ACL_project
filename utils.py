@@ -98,6 +98,9 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+import torch.nn as nn
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.utils.class_weight import compute_class_weight
 
 class EMGDataset(Dataset):
     def __init__(self, X, y):
@@ -127,18 +130,21 @@ def load_datasets(data_dir, batch_size=64):
 
 
 
-import torch
-import torch.nn as nn
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
-import numpy as np
 
-def train_model(model, train_loader, val_loader, epochs=20, lr=1e-3, device="cpu", save_path="best_model.pt"):
+
+def train_model(model, train_loader, val_loader, epochs=20, lr=1e-3, device="cpu", save_path="best_model.pt", y_train=None):
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4) #L2 regularization
 
-    best_val_acc = 0.0
+    # BALANCE WEIGHT
+    class_weights = compute_class_weight(class_weight='balanced', classes=np.array([0, 1]),y=y_train)
+    weight_tensor = torch.FloatTensor(class_weights).to(device)
+    criterion = nn.CrossEntropyLoss(weight=weight_tensor)
 
+    #measure by f1 score instead
+    best_val_f1 = 0.0
+
+    history = {"train_loss": [], "train_acc": [], "val_acc": [], "val_f1": [], "val_recall": []} 
     for epoch in range(epochs):
         model.train()
         train_losses, train_preds, train_labels = [], [], []
@@ -149,6 +155,8 @@ def train_model(model, train_loader, val_loader, epochs=20, lr=1e-3, device="cpu
             output = model(X)
             loss = criterion(output, y)
             loss.backward()
+            #limit the size of gradients during backpropagation to prevent exploding gradients and stabilize training
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) 
             optimizer.step()
 
             train_losses.append(loss.item())
@@ -168,15 +176,24 @@ def train_model(model, train_loader, val_loader, epochs=20, lr=1e-3, device="cpu
                 val_preds.extend(torch.argmax(output, dim=1).cpu().numpy())
                 val_labels.extend(y.cpu().numpy())
 
+        
+
         val_acc = accuracy_score(val_labels, val_preds)
         print(f"             Val Acc={val_acc:.4f}")
-
+        val_prec, val_rec, val_f1, _ = precision_recall_fscore_support( 
+            val_labels, val_preds, average='binary', zero_division=0
+        )
  
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
+        history["train_loss"].append(np.mean(train_losses))
+        history["train_acc"].append(train_acc)
+        history["val_acc"].append(val_acc)
+        history["val_f1"].append(val_f1)
+        history["val_recall"].append(val_rec)
+        if val_f1 > best_val_f1:
+            best_val_f1 = val_f1
             torch.save(model.state_dict(), save_path)
             print(f" Best model updated, Val Acc={val_acc:.4f} saved to {save_path}")
-
+    return history
 
 def evaluate_model(model, test_loader, device="cpu", model_path="best_model.pt"):
     

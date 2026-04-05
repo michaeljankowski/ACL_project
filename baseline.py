@@ -144,6 +144,7 @@
 
 
 import numpy as np
+import os
 import torch
 import argparse
 from torch.utils.data import DataLoader
@@ -160,6 +161,8 @@ def get_model(model_name):
         return LSTMModel()
     elif model_name == "cnnlstm":
         return CNN_LSTM()
+    #elif model_name == "patchtst":        
+    #    return PatchTST()
     else:
         raise ValueError("Unknown model name")
 
@@ -171,11 +174,12 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--data_dir", type=str, default="/home/zip22003/AMI-AI/processed_data")
+    #parser.add_argument("--data_dir", type=str, default="/home/zip22003/AMI-AI/processed_data")
+    parser.add_argument("--data_dir", type=str, default="/Users/michaeljankowski/UConnCS/ACL_Project-main/processed_data")
     parser.add_argument("--save_path", type=str, default="best_model.pt")
     args = parser.parse_args()
 
-    
+    os.makedirs("histories", exist_ok=True)
     model = get_model(args.model)
     print(f"Training model: {args.model.upper()} on {args.device}")
 
@@ -193,14 +197,24 @@ def main():
     test_loader = DataLoader(EMGDataset(X_test, y_test), batch_size=args.batch_size)
 
     
-    train_model(model, train_loader, val_loader,
-                epochs=args.epochs, lr=args.lr, device=args.device,
-                save_path=args.save_path)
+    history = train_model(model, train_loader, val_loader,
+            epochs=args.epochs, lr=args.lr, device=args.device,
+            save_path=args.save_path, y_train=y_train)
 
     
     print(" Evaluating on test set...")
-    evaluate_model(model, test_loader, device=args.device, model_path=args.save_path)
+    #evaluate_model(model, test_loader, device=args.device, model_path=args.save_path)
+    #for visualization
 
+    #Test set
+    acc, precision, recall, f1 = evaluate_model(model, test_loader, device=args.device, model_path=args.save_path)
+    history["test_f1"] = f1
+    history["test_recall"] = recall
+    history["test_acc"] = acc
+    history["test_precision"] = precision
+
+    np.save(f"histories/test_{args.model}_lr{args.lr}_bs{args.batch_size}_ep{args.epochs}_history.npy", history)
+    print(f"History saved to histories/test_{args.model}_lr{args.lr}_bs{args.batch_size}_ep{args.epochs}_history.npy")
 
 if __name__ == "__main__":
     main()

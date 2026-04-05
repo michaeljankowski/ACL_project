@@ -50,8 +50,13 @@ pip install jupyter
 
 
 ### 1. Data Preprocessing
+First fix paths by running:
 
-First, preprocess the raw EMG data:
+```bash
+python fix_paths.py
+```
+
+Then, preprocess the raw EMG data:
 
 ```bash
 python data_process.py --csv_path vlo_vmo_pairs_with_labels.csv --output_dir processed_data
